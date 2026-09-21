@@ -9,14 +9,14 @@ public class Instantiator : MonoBehaviour
         GPU
     }
 
+    #region INSPECTOR FIELDS
     [Header("Instantiation Settings")]
     [SerializeField] private int numberOfObjects = 1000;
     [SerializeField] private GameObject[] plantPrefabs;
     [SerializeField] private float instantiationRadius = 10f;
     [SerializeField] private InstantiationType instantiationType = InstantiationType.CPU;
     [SerializeField] private bool enableShadows = true;
-    
-    private const int MAX_INSTANCES_PER_BATCH = 1023;
+    #endregion
 
     #region API
     public int NumberOfObjects
@@ -46,43 +46,15 @@ public class Instantiator : MonoBehaviour
     }
     #endregion
 
-    void UpdateWindListener()
-    {
-        if (cachedMaterials != null && WindManager.Instance != null)
-        {
-            foreach (var material in cachedMaterials)
-            {
-                if (material == null) continue;
-                material.SetFloat("_WindStrength", WindManager.Instance.WindStrength);
-                material.SetFloat("_WindSpeed", WindManager.Instance.WindSpeed);
-                material.SetFloat("_WindEnabled", WindManager.Instance.WindEnabled ? 1f : 0f);
-            }
-        }
-    }
 
-    // used for even distribution of objects on terrain, unrelated to GPU instancing
     private Terrain terrain;
-
-    // GPU instancing data (full arrays)
-    private Vector3[] positions;
-    private Vector3[] scales;
-    private float[] offsets;
-    private int[] prefabIndices;
-
-    // precomputed instance matrices (TRS) - built once in GenerateInstanceData
-    private Matrix4x4[] instanceMatrices;
-
-    // reusable batch buffers
+    private InstancingData instancingData;
     private Matrix4x4[] batchMatrices;
     private float[] batchOffsets;
     private MaterialPropertyBlock propertyBlock;
-
-    // pre-sorted indices per-prefab
-    private List<int>[] instanceIndicesByPrefab;
-
-    // cached mesh/material per-prefab
     private Mesh[] cachedMeshes;
     private Material[] cachedMaterials;
+    private const int MAX_INSTANCES_PER_BATCH = 1023;
 
     void Start()
     {
@@ -96,14 +68,11 @@ public class Instantiator : MonoBehaviour
             Debug.LogError("Plant prefabs array is empty!");
             return;
         }
-     
 
-        // prepare reusable batch buffers
         batchMatrices = new Matrix4x4[MAX_INSTANCES_PER_BATCH];
         batchOffsets = new float[MAX_INSTANCES_PER_BATCH];
         propertyBlock = new MaterialPropertyBlock();
 
-        // cache mesh/material to avoid GetComponent in Update
         cachedMeshes = new Mesh[plantPrefabs.Length];
         cachedMaterials = new Material[plantPrefabs.Length];
         for (int i = 0; i < plantPrefabs.Length; i++)
@@ -115,9 +84,8 @@ public class Instantiator : MonoBehaviour
             if (cachedMaterials[i] != null) cachedMaterials[i].enableInstancing = true;
         }
 
-
-        // generate data once at start (only regenerated on RefreshInstances)
-        GenerateInstanceData();
+        instancingData = new InstancingData();
+        instancingData.Generate(numberOfObjects, plantPrefabs, transform.position, instantiationRadius, terrain);
 
         if (instantiationType == InstantiationType.CPU)
         {
@@ -139,6 +107,20 @@ public class Instantiator : MonoBehaviour
         Gizmos.DrawWireSphere(transform.position, instantiationRadius);
     }
 
+    void UpdateWindListener()
+    {
+        if (cachedMaterials != null && WindManager.Instance != null)
+        {
+            foreach (var material in cachedMaterials)
+            {
+                if (material == null) continue;
+                material.SetFloat("_WindStrength", WindManager.Instance.WindStrength);
+                material.SetFloat("_WindSpeed", WindManager.Instance.WindSpeed);
+                material.SetFloat("_WindEnabled", WindManager.Instance.WindEnabled ? 1f : 0f);
+            }
+        }
+    }
+
     public InstantiationType SwitchInstantiationType()
     {
         if (instantiationType == InstantiationType.CPU)
@@ -149,7 +131,8 @@ public class Instantiator : MonoBehaviour
         else
         {
             instantiationType = InstantiationType.CPU;
-            if (positions == null || prefabIndices == null) GenerateInstanceData();
+            if (instancingData == null) instancingData = new InstancingData();
+            if (instancingData.Positions == null) instancingData.Generate(numberOfObjects, plantPrefabs, transform.position, instantiationRadius, terrain);
             InstantiateOnCPU();
         }
 
@@ -158,11 +141,12 @@ public class Instantiator : MonoBehaviour
 
     void RefreshInstances()
     {
-        // full refresh only when count (or relevant settings) changed
+        // destroy CPU instances and regenerate instance data
         DestroyCPUInstances();
-        ClearInstanceData();
 
-        GenerateInstanceData();
+        if (instancingData != null) instancingData.Clear();
+        instancingData = new InstancingData();
+        instancingData.Generate(numberOfObjects, plantPrefabs, transform.position, instantiationRadius, terrain);
 
         if (instantiationType == InstantiationType.CPU)
         {
@@ -178,79 +162,16 @@ public class Instantiator : MonoBehaviour
         }
     }
 
-    void ClearInstanceData()
-    {
-        positions = null;
-        scales = null;
-        offsets = null;
-        prefabIndices = null;
-        instanceIndicesByPrefab = null;
-        instanceMatrices = null;
-    }
-
-    Vector3 GetRandomPositionInCircle()
-    {
-        Vector2 randomPoint = Random.insideUnitCircle * instantiationRadius;
-        return new Vector3(
-            transform.position.x + randomPoint.x,
-            0f,
-            transform.position.z + randomPoint.y);
-    }
-
-    Vector3 GetHeightOnTerrain(Vector3 position)
-    {
-        if (terrain == null) return position;
-        position.y = terrain.SampleHeight(position);
-        return position;
-    }
-
-    // CENTRALIZED data generation used by both CPU and GPU instancing
-    private void GenerateInstanceData()
-    {
-        // allocate arrays
-        positions = new Vector3[numberOfObjects];
-        scales = new Vector3[numberOfObjects];
-        offsets = new float[numberOfObjects];
-        prefabIndices = new int[numberOfObjects];
-
-        // prepare per-prefab lists
-        instanceIndicesByPrefab = new List<int>[plantPrefabs.Length];
-        for (int p = 0; p < plantPrefabs.Length; p++)
-        {
-            instanceIndicesByPrefab[p] = new List<int>();
-        }
-
-        // allocate instanceMatrices
-        instanceMatrices = new Matrix4x4[numberOfObjects];
-
-        // fill arrays and per-prefab lists (single pass, O(n))
-        for (int i = 0; i < numberOfObjects; i++)
-        {
-            Vector3 pos = GetRandomPositionInCircle();
-            pos = GetHeightOnTerrain(pos);
-
-            positions[i] = pos;
-            offsets[i] = Random.Range(0f, 10f);
-            int p = Random.Range(0, plantPrefabs.Length);
-            prefabIndices[i] = p;
-            scales[i] = plantPrefabs[p].transform.localScale;
-
-            // precompute TRS matrix once
-            instanceMatrices[i] = Matrix4x4.TRS(positions[i], Quaternion.identity, scales[i]);
-
-            instanceIndicesByPrefab[p].Add(i);
-        }
-    }
 
     void InstantiateOnCPU()
     {
-        if (positions == null || prefabIndices == null) GenerateInstanceData();
+        if (instancingData == null || instancingData.Positions == null) instancingData.Generate(numberOfObjects, plantPrefabs, transform.position, instantiationRadius, terrain);
 
         for (int i = 0; i < numberOfObjects; i++)
         {
-            int p = prefabIndices[i];
+            int p = instancingData.PrefabIndices[i];
             GameObject prefab = plantPrefabs[p];
-            Vector3 pos = positions[i];
+            Vector3 pos = instancingData.Positions[i];
             GameObject instance = Instantiate(prefab, pos, Quaternion.identity, transform);
             var mr = instance.GetComponent<MeshRenderer>();
             if (mr != null)
@@ -260,16 +181,15 @@ public class Instantiator : MonoBehaviour
         }
     }
 
-
     void UpdateAndRenderGPU()
     {
-        if (WindManager.Instance == null || positions == null) return;
+        if (WindManager.Instance == null || instancingData == null || instancingData.Positions == null) return;
 
         var shadowMode = enableShadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off;
 
         for (int prefabIndex = 0; prefabIndex < plantPrefabs.Length; prefabIndex++)
         {
-            var indices = instanceIndicesByPrefab[prefabIndex];
+            var indices = instancingData.IndicesByPrefab[prefabIndex];
             if (indices == null || indices.Count == 0) continue;
 
             var mesh = cachedMeshes[prefabIndex];
@@ -283,9 +203,8 @@ public class Instantiator : MonoBehaviour
                 for (int b = 0; b < batchSize; b++)
                 {
                     int idx = indices[start + b];
-                    // copy precomputed matrix - no TRS computation per frame
-                    batchMatrices[b] = instanceMatrices[idx];
-                    batchOffsets[b] = offsets[idx];
+                    batchMatrices[b] = instancingData.InstanceMatrices[idx];
+                    batchOffsets[b] = instancingData.Offsets[idx];
                 }
 
                 propertyBlock.Clear();
