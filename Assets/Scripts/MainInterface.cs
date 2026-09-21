@@ -184,7 +184,7 @@ public class MainInterface : MonoBehaviour
         }
 
         // draw bars (area shifted right by labelWidth)
-        GUI.color = new Color(0f, 1f, 0f, 0.8f);
+        GUI.color = new Color(0f, 1f, 0f, 0.5f);
         float barWidth = (float)innerWidth / GraphSize;
         for (int i = 0; i < GraphSize; i++)
         {
