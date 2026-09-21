@@ -49,6 +49,7 @@ public class Instantiator : MonoBehaviour
 
     private Terrain terrain;
     private InstancingData instancingData;
+
     private Matrix4x4[] batchMatrices;
     private float[] batchOffsets;
     private MaterialPropertyBlock propertyBlock;
@@ -174,9 +175,13 @@ public class Instantiator : MonoBehaviour
             Vector3 pos = instancingData.Positions[i];
             GameObject instance = Instantiate(prefab, pos, Quaternion.identity, transform);
             var mr = instance.GetComponent<MeshRenderer>();
+            var mpb = new MaterialPropertyBlock();
+            mpb.SetFloat("_Offset", instancingData.Offsets[i]);
+
             if (mr != null)
             {
                 mr.shadowCastingMode = enableShadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.SetPropertyBlock(mpb);
             }
         }
     }

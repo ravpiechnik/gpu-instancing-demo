@@ -5,6 +5,8 @@ using TMPro;
 public class MainInterface : MonoBehaviour
 {
 
+    #region SCENE REFERENCES
+
     [SerializeField] Instantiator instantiator;
     [SerializeField] TMP_Text instancingModeText;
     [SerializeField] TMP_Text instancingModeButtonText;
@@ -19,6 +21,10 @@ public class MainInterface : MonoBehaviour
 
     [SerializeField] TMP_Text numberOfObjectsText;
     [SerializeField] Slider numberOfObjectsSlider;
+
+    [SerializeField] TMP_Text fpsText;
+
+    #endregion
 
 
 
@@ -41,12 +47,18 @@ public class MainInterface : MonoBehaviour
 
     public void ToggleShadows() {
         if (instantiator == null) return;
+        if (shadowsToggle == null) return;
         instantiator.EnableShadows = shadowsToggle.isOn;
     }
 
     public void ToggleWind() {
         if (WindManager.Instance == null) return;
+        if (windToggle == null) return;
+        if (windSpeedSlider == null) return;
+        if (windStrengthSlider == null) return;
+
         WindManager.Instance.WindEnabled = windToggle.isOn;
+
         if (windToggle.isOn) {
             windSpeedSlider.interactable = true;
             windStrengthSlider.interactable = true;
@@ -58,11 +70,13 @@ public class MainInterface : MonoBehaviour
 
     public void ChangeWindSpeed() {
         if (WindManager.Instance == null) return;
+        if (windSpeedSlider == null) return;
         WindManager.Instance.WindSpeed = windSpeedSlider.value;
     }
 
     public void ChangeWindStrength() {
         if (WindManager.Instance == null) return;
+        if (windStrengthSlider == null) return;
         WindManager.Instance.WindStrength = windStrengthSlider.value;
     }
 
@@ -71,12 +85,26 @@ public class MainInterface : MonoBehaviour
         // handle only UI here; refreshing the scene is expensive.
         // Event Trigger component + OnDragEnd handles the refresh
         if (instantiator == null) return;
+        if (numberOfObjectsSlider == null) return;
+        if (numberOfObjectsText == null) return;
         numberOfObjectsText.text = "Number of objects: " + ((int)numberOfObjectsSlider.value).ToString();
     }
 
     public void ChangeNumberOfObjects()
     {
         if (instantiator == null) return;
+        if (numberOfObjectsSlider == null) return;
         instantiator.NumberOfObjects = (int)numberOfObjectsSlider.value;
     }
+
+    private void Update()
+    {
+        if(Input.GetKeyDown(KeyCode.Q)) Application.Quit();
+
+        if (fpsText == null) return;
+        float fps = 1f / Time.unscaledDeltaTime;
+        fpsText.text = "FPS: " + Mathf.RoundToInt(fps).ToString();
+
+    }
 }
+

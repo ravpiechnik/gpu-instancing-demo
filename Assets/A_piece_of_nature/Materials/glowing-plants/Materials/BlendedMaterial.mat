@@ -103,7 +103,7 @@ Material:
     - _TransparentZWrite: 0
     - _UseShadowThreshold: 0
     - _WindEnabled: 1
-    - _WindSpeed: 1.6169103
+    - _WindSpeed: 2
     - _WindStrength: 1
     - _ZTestDepthEqualForOpaque: 3
     - _ZTestGBuffer: 4
