@@ -3414,6 +3414,9 @@ MonoBehaviour:
   numberOfObjectsText: {fileID: 341187116}
   numberOfObjectsSlider: {fileID: 1863778029}
   fpsText: {fileID: 651121408}
+  graphWidth: 400
+  graphHeight: 200
+  graphMargin: 10
 --- !u!114 &1525530213
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4112,7 +4115,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 847234375}
   m_Direction: 0
   m_MinValue: 0
-  m_MaxValue: 500000
+  m_MaxValue: 250000
   m_WholeNumbers: 1
   m_Value: 0
   m_OnValueChanged:
