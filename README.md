@@ -8,6 +8,9 @@ The project generates vegetation procedurally on a terrain and allows the render
 
 **Note:** The GPU instancing solution was stripped from production and recontextualized for this repo. Be aware that specific dependencies, functionalities and optimizations have been removed or simplified.
 
+## Unity Version
+
+6000.4.2f1
 
 ## Features
 
